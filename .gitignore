@@ -1,0 +1,65 @@
+# ============================================================================
+# ARCHIVOS SENSIBLES - NUNCA PUBLICAR
+# ============================================================================
+
+# Variables de entorno con API Keys y secretos
+.env
+.env.local
+.env.*.local
+
+# ============================================================================
+# DEPENDENCIAS INSTALABLES (se reconstruyen con pip install)
+# ============================================================================
+
+# Entorno virtual de Python
+venv/
+.venv/
+env/
+ENV/
+
+# ============================================================================
+# CACHÉ Y ARCHIVOS TEMPORALES DE PYTHON
+# ============================================================================
+
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Archivos temporales del backend (audios entrantes/salientes)
+backend/temp/
+temp/
+
+# ============================================================================
+# IDE / EDITORES
+# ============================================================================
+
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ============================================================================
+# LOGS
+# ============================================================================
+
+*.log
+logs/
