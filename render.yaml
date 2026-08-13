@@ -1,0 +1,34 @@
+# ============================================================================
+# Render Blueprint - Voice AI Agent
+# ============================================================================
+# Este archivo permite desplegar el proyecto en Render (plan gratuito)
+# directamente desde el repositorio.
+#
+# Pasos para desplegar gratis:
+#   1. Sube este proyecto a un repositorio de GitHub/GitLab/Bitbucket.
+#   2. Entra a https://dashboard.render.com
+#   3. Crea una cuenta gratuita (NO requiere tarjeta de crédito).
+#   4. Crea un "Blueprint" o nuevo "Web Service" apuntando al repositorio.
+#      - Si usas "Blueprint", Render detecta este render.yaml automáticamente.
+#      - Si usas "Web Service" manual, usa los valores de abajo.
+#   5. Define la variable de entorno GROQ_API_KEY con tu clave de Groq.
+#   6. Habilita HTTPS (default) y abre la URL https://tu-app.onrender.com
+#
+# NOTA: Render duerme el servicio gratis después de 15 min de inactividad.
+#       La primera petición puede tardar ~30-60s mientras "despierta".
+# ============================================================================
+
+services:
+  - type: web
+    name: voice-ai-agent
+    env: python
+    plan: free
+    buildCommand: "pip install -r backend/requirements.txt"
+    startCommand: "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+        # En el dashboard de Render, agrega tu clave de Groq en el campo
+        # "Value" cuando Render te lo pida al crear el servicio.
+    healthCheckPath: /
+    autoDeploy: true

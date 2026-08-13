@@ -867,4 +867,8 @@ app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Puerto desde variable de entorno (Render, Railway, HF Spaces, etc.)
+    # Default: 8000 para desarrollo local
+    port = int(os.getenv("PORT", "8000"))
+
+    uvicorn.run(app, host="0.0.0.0", port=port)
