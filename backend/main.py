@@ -71,7 +71,11 @@ TEMP_DIR = Path(__file__).parent / "temp"
 TEMP_DIR.mkdir(exist_ok=True)
 
 # Directorio del frontend (archivos estáticos)
-FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
+# En producción, Vite build genera los archivos en frontend/dist
+# En desarrollo (sin build), sirve directamente desde frontend/
+FRONTEND_DIR = Path(__file__).parent.parent / "frontend" / "dist"
+if not FRONTEND_DIR.exists():
+    FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
 # ------------------------------------------------------------------
 # CATÁLOGO MOCK DE PRODUCTOS
@@ -212,10 +216,15 @@ SYSTEM_PROMPT = (
     "4. PEDIDOS Y CONTACTO:\n"
     "- PROHIBIDO volver a preguntar el nombre.\n"
     "- Si el usuario quiere hacer un pedido, confirma el producto y pregunta la cantidad deseada.\n"
+    "- El usuario puede agregar MÁS productos en cualquier momento, incluso después de "
+    "registrar la dirección y ciudad o generar el QR. Usa registrar_pedido para agregar.\n"
+    "- El usuario puede RETIRAR productos en cualquier momento, incluso después de "
+    "registrar la dirección y ciudad o generar el QR. Usa retirar_producto para retirar.\n"
+    "- Al agregar o retirar productos, el subtotal y total se recalculan automáticamente.\n"
     "- Después de confirmar cantidad, DI al usuario: 'Para poder calcular el valor del envío, "
     "necesito que me indiques la dirección de entrega y la ciudad'.\n"
     "- Cuando el usuario indique dirección y ciudad, invoca la herramienta registrar_envio.\n"
-    "- Después de registrar el envío, confirma: producto, cantidad, subtotal, valor del envío, "
+    "- Después de registrar el envío, confirma: productos, subtotal, valor del envío, "
     "y total a pagar. Indica que se mostrará el código QR de pago.\n"
     "- Si el usuario pide hablar con un asesor o agente humano, responde que "
     "le contactaremos por WhatsApp al número de su cuenta.\n\n"
@@ -401,6 +410,47 @@ def generate_payment_qr(product_name: str, quantity: int = 1):
     }
 
 
+def generate_payment_qr_multi(productos: list, total: int, currency: str = "COP"):
+    """
+    Genera un QR de pago ficticio para un pedido con múltiples productos.
+    El QR contiene un texto simulado de pago (mock) con:
+      - ID de pedido
+      - Lista de productos
+      - Total
+    """
+    order_id = uuid.uuid4().hex[:8].upper()
+
+    # Construir el payload con todos los productos
+    productos_str = "|".join(
+        f"{p['cantidad']}x {p['producto']} (${p['subtotal']:,})" for p in productos
+    )
+
+    # Texto de pago simulado (en producción: link/payload real de la pasarela)
+    payment_payload = (
+        f"ORDER:{order_id}|PRODUCTS:{productos_str}|"
+        f"TOTAL:{total}|CURRENCY:{currency}"
+    )
+
+    # Generar imagen QR en memoria
+    qr = qrcode.QRCode(version=1, box_size=10, border=4)
+    qr.add_data(payment_payload)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    # Guardar PNG temporalmente
+    qr_path = TEMP_DIR / f"qr_{order_id}.png"
+    img.save(str(qr_path))
+
+    return {
+        "order_id": order_id,
+        "productos": productos,
+        "total": total,
+        "currency": currency,
+        "payment_payload": payment_payload,
+        "qr_path": qr_path,
+    }
+
+
 # ------------------------------------------------------------------
 # ENVÍO / DIRECCIÓN
 # ------------------------------------------------------------------
@@ -434,10 +484,11 @@ PAYMENT_FUNCTION_SCHEMA = {
     "function": {
         "name": "registrar_pedido",
         "description": (
-            "Registra un pedido del usuario. Llama a esta función cuando el usuario "
+            "Registra un producto en el pedido del usuario. Llama a esta función cuando el usuario "
             "confirme que quiere comprar o pedir un producto del catálogo, "
-            "indicando el producto y la cantidad. Después de esto, el usuario DEBE "
-            "proporcionar dirección y ciudad de envío."
+            "indicando el producto y la cantidad. Puedes llamarla múltiples veces "
+            "para agregar diferentes productos al mismo carrito. "
+            "Después de agregar productos, el usuario DEBE proporcionar dirección y ciudad de envío."
         ),
         "parameters": {
             "type": "object",
@@ -483,6 +534,31 @@ SHIPPING_FUNCTION_SCHEMA = {
                 },
             },
             "required": ["direccion", "ciudad"],
+        },
+    },
+}
+
+
+# Herramienta para retirar un producto del pedido
+REMOVE_PRODUCT_FUNCTION_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "retirar_producto",
+        "description": (
+            "Retira un producto del pedido actual. Llama a esta función cuando el usuario "
+            "quiera eliminar o retirar un producto que ya haya agregado al carrito, "
+            "ya sea antes o después de registrar la dirección/envío. "
+            "El subtotal y total se recalculan automáticamente."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "producto": {
+                    "type": "string",
+                    "description": "Nombre del producto a retirar del pedido",
+                },
+            },
+            "required": ["producto"],
         },
     },
 }
@@ -638,7 +714,7 @@ async def voice_chat(
             # automático si el principal alcanza el límite de tokens (429).
             chat_response: Any = _llm_completion(
                 messages=build_messages,
-                tools=[PAYMENT_FUNCTION_SCHEMA, SHIPPING_FUNCTION_SCHEMA],  # type: ignore[arg-type]
+                tools=[PAYMENT_FUNCTION_SCHEMA, SHIPPING_FUNCTION_SCHEMA, REMOVE_PRODUCT_FUNCTION_SCHEMA],  # type: ignore[arg-type]
                 temperature=0.7,
                 max_tokens=150,
             )
@@ -659,48 +735,96 @@ async def voice_chat(
 
                 if fn_name == "registrar_pedido":
                     # PASO A: registrar el pedido (sin QR todavía)
+                    # Soporta múltiples productos: agrega al carrito existente
                     producto = args.get("producto", "")
                     cantidad = int(args.get("cantidad", 1))
                     product = _find_product(producto)
                     if product:
-                        subtotal = product["precio"] * cantidad
-                        moneda = product.get("moneda", "COP")
-                        # Guardar pedido activo para la sesión (MVP: default)
-                        step_order_data = {
+                        # Inicializar orden si no existe
+                        if "default" not in ACTIVE_ORDERS:
+                            ACTIVE_ORDERS["default"] = {
+                                "productos": [],
+                                "moneda": product.get("moneda", "COP"),
+                                "direccion": "",
+                                "ciudad": "",
+                                "envio": None,
+                                "total": None,
+                                "qr_path": None,
+                                "order_data": None,
+                            }
+
+                        # Agregar producto al carrito
+                        ACTIVE_ORDERS["default"]["productos"].append({
                             "producto": product["nombre"],
                             "cantidad": cantidad,
                             "precio_unitario": product["precio"],
+                            "subtotal": product["precio"] * cantidad,
+                        })
+
+                        # Recalcular subtotal
+                        subtotal = sum(p["subtotal"] for p in ACTIVE_ORDERS["default"]["productos"])
+                        moneda = ACTIVE_ORDERS["default"]["moneda"]
+
+                        # Actualizar order_data
+                        order_data = {
+                            "productos": ACTIVE_ORDERS["default"]["productos"],
                             "subtotal": subtotal,
                             "moneda": moneda,
                             "direccion": "",
                             "ciudad": "",
                             "envio": None,
                             "total": None,
-                            "qr_url": "",
                         }
-                        ACTIVE_ORDERS["default"] = {
-                            "producto": product["nombre"],
-                            "cantidad": cantidad,
-                            "precio_unitario": product["precio"],
-                            "subtotal": subtotal,
-                            "moneda": moneda,
-                            # Persistencia del dashboard/QR: se llenan en registrar_envio
-                            "order_data": step_order_data,
-                            "qr_path": None,
-                        }
-                        # Devolver la tarjeta parcial en este turno (paso producto+cantidad)
-                        order_data = step_order_data
+                        ACTIVE_ORDERS["default"]["order_data"] = order_data
 
                         # Responder pidiendo dirección y ciudad (sin QR aún).
-                        # El mensaje se construye directamente en el backend para
-                        # evitar una llamada LLM adicional (ahorra tokens).
                         assistant_text = (
-                            f"El pedido de {cantidad} unidad(es) de {product['nombre']} "
-                            f"por ${subtotal:,} {moneda} está registrado. "
-                            f"Para calcular el envío, necesito tu dirección y ciudad."
+                            f"Se agregó {cantidad} unidad(es) de {product['nombre']} al pedido. "
+                            f"Subtotal: ${subtotal:,} {moneda}. "
+                            f"¿Deseas agregar más productos o necesitas indicar dirección y ciudad?"
                         )
                     else:
                         assistant_text = "Lo siento, no encontré ese producto en el catálogo."
+
+                elif fn_name == "retirar_producto":
+                    # Retirar un producto del carrito
+                    producto = args.get("producto", "")
+                    active_order = ACTIVE_ORDERS.get("default")
+                    if active_order and active_order.get("productos"):
+                        productos = active_order["productos"]
+                        # Buscar y retirar el producto
+                        removed = False
+                        for i, p in enumerate(productos):
+                            if _normalize_text(p["producto"]) == _normalize_text(producto) or _normalize_text(producto) in _normalize_text(p["producto"]):
+                                productos.pop(i)
+                                removed = True
+                                break
+
+                        if removed:
+                            # Recalcular subtotal
+                            subtotal = sum(p["subtotal"] for p in productos)
+                            moneda = active_order["moneda"]
+
+                            # Actualizar order_data
+                            order_data = {
+                                "productos": productos,
+                                "subtotal": subtotal,
+                                "moneda": moneda,
+                                "direccion": active_order.get("direccion", ""),
+                                "ciudad": active_order.get("ciudad", ""),
+                                "envio": active_order.get("envio"),
+                                "total": active_order.get("total"),
+                            }
+                            active_order["order_data"] = order_data
+
+                            if productos:
+                                assistant_text = f"Se retiró {producto} del pedido. Subtotal actualizado: ${subtotal:,} {moneda}."
+                            else:
+                                assistant_text = "Se retiró el producto. El pedido está vacío."
+                        else:
+                            assistant_text = f"No encontré {producto} en tu pedido."
+                    else:
+                        assistant_text = "No hay productos en el pedido para retirar."
 
                 elif fn_name == "registrar_envio":
                     # PASO B: registrar envío y generar QR + datos del pedido
@@ -713,44 +837,49 @@ async def voice_chat(
                         # Si no hay pedido, pedir primero el producto
                         assistant_text = "Primero necesito saber qué producto deseas ordenar."
                     else:
-                        envio = calculate_shipping(ciudad)
-                        subtotal = active_order["subtotal"]
-                        total = subtotal + envio
-                        moneda = active_order["moneda"]
+                        productos = active_order.get("productos", [])
+                        if not productos:
+                            assistant_text = "Primero necesito saber qué producto deseas ordenar."
+                        else:
+                            envio = calculate_shipping(ciudad)
+                            # Calcular subtotal desde todos los productos
+                            subtotal = sum(p["subtotal"] for p in productos)
+                            total = subtotal + envio
+                            moneda = active_order["moneda"]
 
-                        # Generar QR con el TOTAL final (producto + envío)
-                        qr_info = generate_payment_qr(active_order["producto"], active_order["cantidad"])
-                        qr_path = qr_info["qr_path"]
+                            # Generar QR con el TOTAL final (producto + envío)
+                            qr_info = generate_payment_qr_multi(productos, total, moneda)
+                            qr_path = qr_info["qr_path"]
 
-                        # Datos completos del pedido para el dashboard
-                        order_data = {
-                            "producto": active_order["producto"],
-                            "cantidad": active_order["cantidad"],
-                            "precio_unitario": active_order["precio_unitario"],
-                            "subtotal": subtotal,
-                            "direccion": direccion,
-                            "ciudad": ciudad,
-                            "envio": envio,
-                            "total": total,
-                            "moneda": moneda,
-                            "qr_url": f"/api/payment-qr/{qr_info['order_id']}",
-                        }
+                            # Datos completos del pedido para el dashboard
+                            order_data = {
+                                "productos": productos,
+                                "subtotal": subtotal,
+                                "direccion": direccion,
+                                "ciudad": ciudad,
+                                "envio": envio,
+                                "total": total,
+                                "moneda": moneda,
+                                "qr_url": f"/api/payment-qr/{qr_info['order_id']}",
+                            }
 
-                        # PERSISTIR el pedido completado en ACTIVE_ORDERS
-                        # para que el QR y dashboard NO se pierdan si el usuario
-                        # cambia de tema (pide otro producto, descuento, etc.)
-                        ACTIVE_ORDERS["default"]["order_data"] = order_data
-                        ACTIVE_ORDERS["default"]["qr_path"] = qr_path
+                            # PERSISTIR el pedido completado en ACTIVE_ORDERS
+                            # para que el QR y dashboard NO se pierdan si el usuario
+                            # cambia de tema (pide otro producto, descuento, etc.)
+                            ACTIVE_ORDERS["default"]["order_data"] = order_data
+                            ACTIVE_ORDERS["default"]["qr_path"] = qr_path
 
-                        # Responder confirmando el pedido, envío y QR.
-                        # El mensaje se construye directamente en el backend para
-                        # evitar una llamada LLM adicional (ahorra tokens).
-                        assistant_text = (
-                            f"Tu pedido de {active_order['cantidad']} unidad(es) de "
-                            f"{active_order['producto']} quedó así: subtotal ${subtotal:,}, "
-                            f"envío a {ciudad} ${envio:,}, total ${total:,} {moneda}. "
-                            f"Se mostrará el código QR para el pago."
-                        )
+                            # Responder confirmando el pedido, envío y QR.
+                            # El mensaje se construye directamente en el backend para
+                            # evitar una llamada LLM adicional (ahorra tokens).
+                            productos_str = ", ".join(
+                                f"{p['cantidad']}x {p['producto']}" for p in productos
+                            )
+                            assistant_text = (
+                                f"Tu pedido ({productos_str}) quedó así: subtotal ${subtotal:,}, "
+                                f"envío a {ciudad} ${envio:,}, total ${total:,} {moneda}. "
+                                f"Se mostrará el código QR para el pago."
+                            )
                 else:
                     raw_content = message.content
                     assistant_text = raw_content.strip() if raw_content else "Lo siento, no pude procesar tu solicitud."

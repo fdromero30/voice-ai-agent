@@ -85,7 +85,7 @@ curl -X POST http://localhost:8000/api/voice-chat \
 
 ---
 
-## 🧪 Prueba Rápida (sin frontend)
+## Prueba Rápida (sin frontend)
 
 Para probar el backend directamente con un archivo de audio:
 

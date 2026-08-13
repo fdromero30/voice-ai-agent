@@ -17,6 +17,12 @@ venv/
 env/
 ENV/
 
+# Dependencias de Node.js (frontend)
+frontend/node_modules/
+
+# Build de producción del frontend (Vite)
+frontend/dist/
+
 # ============================================================================
 # CACHÉ Y ARCHIVOS TEMPORALES DE PYTHON
 # ============================================================================
