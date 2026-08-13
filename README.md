@@ -2,33 +2,7 @@
 
 Aplicación web funcional que permite grabar una nota de voz, enviarla a un backend en **FastAPI**, y recibir automáticamente una respuesta hablada generada por **Inteligencia Artificial**.
 
-## 📋 Stack Tecnológico (100% Gratuito)
-
-| Componente | Tecnología | Modelo / Librería |
-|---|---|---|
-| **Backend** | Python 3.10+ / FastAPI | — |
-| **Speech-to-Text (STT)** | Groq Cloud API | `whisper-large-v3-turbo` |
-| **LLM / Cerebro** | Groq Cloud API | `llama-3.3-70b-versatile` |
-| **Text-to-Speech (TTS)** | Microsoft Edge Neural | `edge-tts` (voz `es-CO-SalomeNeural`) |
-| **Frontend** | HTML5 + JS Vanilla + Tailwind CSS | — |
-
-## 📁 Estructura del Proyecto
-
-```
-voice-ai-agent/
-├── backend/
-│   ├── main.py              # Servidor FastAPI (STT + LLM + TTS)
-│   ├── requirements.txt     # Dependencias de Python
-│   └── .env.example         # Plantilla de variables de entorno (no se sube .env real)
-├── frontend/
-│   └── index.html           # Interfaz web (grabadora push-to-talk)
-├── .gitignore               # Excluye .env, venv/, temp/, cachés
-└── README.md
-```
-
----
-
-## ⚙️ Instalación
+## Instalación
 
 ### 1. Requisitos Previos
 
@@ -62,7 +36,7 @@ cp .env.example .env
 
 ### 3. Ejecutar el Backend (sirve también el frontend)
 
-> ⚠️ **IMPORTANTE:** Si usas una terminal NUEVA, debes activar el entorno virtual antes de ejecutar `uvicorn`. Sin esto dará `command not found: uvicorn`.
+> **IMPORTANTE:** Si usas una terminal NUEVA, debes activar el entorno virtual antes de ejecutar `uvicorn`. Sin esto dará `command not found: uvicorn`.
 
 ```bashn
 # Desde la carpeta backend
@@ -86,11 +60,11 @@ El frontend se sirve automáticamente desde FastAPI (necesario para que el naveg
 open http://localhost:8000/index.html
 ```
 
-> ✅ **Importante:** Debes usar `http://localhost:8000/index.html` y **no** abrir `frontend/index.html` directamente con `file://`, ya que el navegador **bloquea el micrófono** en páginas no seguras.
+> **Importante:** Debes usar `http://localhost:8000/index.html` y **no** abrir `frontend/index.html` directamente con `file://`, ya que el navegador **bloquea el micrófono** en páginas no seguras.
 
 ---
 
-## 🎯 Cómo Usar la Aplicación
+## Cómo Usar la Aplicación
 
 1. **Mantén presionado** el botón del micrófono 🎤 para grabar tu nota de voz.
 2. **Suelta** el botón para detener la grabación y enviarla al backend.
@@ -128,7 +102,7 @@ afplay respuesta.mp3
 
 ---
 
-## 🛠️ Solución de Problemas
+##  Solución de Problemas
 
 | Problema | Solución |
 |---|---|
@@ -141,30 +115,7 @@ afplay respuesta.mp3
 
 ---
 
-## 🔄 Flujo de Trabajo del Backend
-
-```
-┌─────────────┐     POST /api/voice-chat     ┌──────────────────┐
-│   Frontend  │ ───────────────────────────▶ │     FastAPI      │
-│ (MediaRecorder)│   multipart: voice.webm    │                  │
-└─────────────┘                              │  1. STT: Groq    │
-                                             │     Whisper Turbo │
-                                             │  2. LLM: Groq    │
-                                             │     Llama 3.3    │
-                                             │  3. TTS: edge-tts│
-                                             └────────┬─────────┘
-                                                      │
-                                           FileResponse (audio/mpeg)
-                                                      │
-┌─────────────┐     audio/mpeg            ┌──────────▼─────────┐
-│   Frontend  │ ◀─────────────────────── │    Respuesta MP3   │
-│ (Reproduce) │                          └────────────────────┘
-└─────────────┘
-```
-
----
-
-## 🚀 Fase Siguiente: Integración con WhatsApp Cloud API
+## Fase Siguiente: Integración con WhatsApp Cloud API
 
 El backend ya está listo para desacoplarse. Para integrarlo con WhatsApp:
 
@@ -174,7 +125,3 @@ El backend ya está listo para desacoplarse. Para integrarlo con WhatsApp:
 4. Subir la respuesta MP3 a WhatsApp y enviarla como mensaje de audio.
 
 ---
-
-## 📄 Licencia
-
-Proyecto educativo libre. Los modelos y APIs usados son gratuitos (Groq, Edge TTS, Tailwind CSS).
