@@ -492,7 +492,7 @@ SHIPPING_FUNCTION_SCHEMA = {
 # ENDPOINT PRINCIPAL
 # ------------------------------------------------------------------
 
-@app.get("/")
+@app.get("/api/health")
 async def health_check():
     """Endpoint de verificación de salud del servicio."""
     return {
