@@ -76,6 +76,23 @@ function showError(message) {
 }
 
 /**
+ * En pantallas pequeñas (mobile-first) los paneles de pedido y QR
+ * quedan debajo de la tarjeta principal; los desplazamos a la vista
+ * para que el usuario no se pierda la información.
+ * En escritorio (>= lg) son columnas laterales fijas: no se hace scroll.
+ */
+const isDesktopLayout = () => window.matchMedia('(min-width: 1024px)').matches;
+
+function revealOnMobile(element) {
+    if (!element || isDesktopLayout()) return;
+    // Pequeño retraso para permitir el repintado tras quitar 'hidden'
+    setTimeout(() => {
+        element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 150);
+}
+
+
+/**
  * Actualiza el temporizador de grabación.
  */
 function updateTimer() {
